@@ -15,3 +15,7 @@ Portarias_requisitados*.txt
 
 # Arquivos temporários do Office
 ~$*
+
+# Acervo de DJEs anteriores e exemplos de calibração (contêm dados de servidores)
+Acervo/
+exemplos_apostilas/

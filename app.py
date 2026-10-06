@@ -3,11 +3,15 @@ import pandas as pd
 import fitz  # PyMuPDF
 import os
 import re
-import bisect
 import numbers
 from datetime import datetime
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Border, Side, Alignment, Font
+
+from analise_dje import (
+    TERMOS_CARGOS, TERMOS_ACAO, TERMO_MATRICULA, CONTA, NAO_CONTA, VERIFICAR,
+    listar_pdfs, ler_paginas_pdf, dividir_em_atos, analisar_documento, BuscaPortarias
+)
 
 # ==========================================
 # CONFIGURAÇÃO DA PÁGINA E VARIÁVEIS GERAIS
@@ -24,13 +28,6 @@ MESES_EXTENSO = {
     9: "SETEMBRO", 10: "OUTUBRO", 11: "NOVEMBRO", 12: "DEZEMBRO"
 }
 
-TERMOS_CARGOS = re.compile(r'(CAI-|DAI-|DAS-)', re.IGNORECASE)
-TERMOS_ACAO = re.compile(r'(nomeação|nomear|designação|designar|dispensa|dispensar|exoneração|exonerar)', re.IGNORECASE)
-# Matrícula iniciada por 5 com no mínimo 4 dígitos, aceitando "." e "-" entre eles (ex.: 5012345, 5.012.345, 501234-5)
-TERMO_MATRICULA = re.compile(r'matr[a-zí\.]*[^\d]{0,20}\b(5(?:[.\-]?\d){3,})\b', re.IGNORECASE)
-# Uma nova portaria começa quando "PORTARIA" abre uma linha; citações no meio do texto não cortam o bloco
-INICIO_PORTARIA = re.compile(r'^[ \t]*PORTARIA\b', re.IGNORECASE | re.MULTILINE)
-
 # ==========================================
 # FUNÇÕES AUXILIARES
 # ==========================================
@@ -45,36 +42,10 @@ def nome_com_timestamp(nome_base):
     nome, ext = os.path.splitext(nome_base)
     return f"{nome}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{ext}"
 
-def listar_pdfs(pasta):
-    return [f for f in sorted(os.listdir(pasta)) if f.lower().endswith(".pdf")]
-
 def listar_planilhas():
     """Planilhas .xlsx da pasta do sistema, da mais recente para a mais antiga."""
     arquivos = [f for f in os.listdir(BASE_DIR) if f.lower().endswith(".xlsx") and not f.startswith("~$")]
     return sorted(arquivos, key=lambda f: os.path.getmtime(os.path.join(BASE_DIR, f)), reverse=True)
-
-def ler_paginas_pdf(caminho_pdf):
-    with fitz.open(caminho_pdf) as doc:
-        return [pagina.get_text() for pagina in doc]
-
-def dividir_em_portarias(textos_paginas):
-    """Junta as páginas de um PDF e divide o texto em blocos, um por portaria.
-
-    Retorna a lista de (bloco, posição inicial no texto) e a posição em que cada página começa,
-    para que um trecho do bloco possa ser associado à página de origem.
-    """
-    texto = ""
-    inicios_pagina = []
-    for texto_pagina in textos_paginas:
-        inicios_pagina.append(len(texto))
-        texto += texto_pagina + "\n"
-
-    cortes = [0] + [m.start() for m in INICIO_PORTARIA.finditer(texto)] + [len(texto)]
-    blocos = [(texto[ini:fim], ini) for ini, fim in zip(cortes, cortes[1:]) if fim > ini]
-    return blocos, inicios_pagina
-
-def numero_da_pagina(inicios_pagina, posicao):
-    return bisect.bisect_right(inicios_pagina, posicao)  # numeração começando em 1
 
 def converter_data(valor):
     """Converte o valor da coluna DATA (texto dd/mm/aaaa ou data do Excel) em datetime. None se inválido."""
@@ -112,32 +83,45 @@ def ler_planilha_indice(caminho_planilha):
         return None, f"A planilha {os.path.basename(caminho_planilha)} não tem as colunas obrigatórias: {', '.join(faltando)}."
     return df, None
 
+COLUNAS_TEXTO_LONGO = {"MOTIVO", "REFERÊNCIA", "TRECHO"}
+CORES_RESULTADO = {CONTA: "C6EFCE", NAO_CONTA: "EDEDED", VERIFICAR: "FFEB9C"}
+
 def estilizar_planilha(arquivo):
     wb = load_workbook(arquivo)
-    ws = wb.active
     cor_cabecalho = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
     fonte_cabecalho = Font(bold=True, name='Calibri')
     alinhamento_centro = Alignment(horizontal="center", vertical="center")
+    alinhamento_texto = Alignment(horizontal="left", vertical="top", wrap_text=True)
     borda_fina = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
 
-    for cell in ws[1]:
-        cell.fill = cor_cabecalho
-        cell.font = fonte_cabecalho
-        cell.alignment = alinhamento_centro
-        cell.border = borda_fina
-
-    for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
-        for cell in row:
+    for ws in wb.worksheets:
+        cabecalhos = [cell.value for cell in ws[1]]
+        for cell in ws[1]:
+            cell.fill = cor_cabecalho
+            cell.font = fonte_cabecalho
             cell.alignment = alinhamento_centro
             cell.border = borda_fina
 
-    for col in ws.columns:
-        max_length = 0
-        column = col[0].column_letter
-        for cell in col:
-            if cell.value:
-                max_length = max(max_length, len(str(cell.value)))
-        ws.column_dimensions[column].width = max_length + 4
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+            for cell, coluna in zip(row, cabecalhos):
+                cell.alignment = alinhamento_texto if coluna in COLUNAS_TEXTO_LONGO else alinhamento_centro
+                cell.border = borda_fina
+                if coluna == "RESULTADO":
+                    # "VERIFICAR (dispensável)" usa a mesma cor de "VERIFICAR"
+                    cor = CORES_RESULTADO.get(str(cell.value).split(" (")[0])
+                    if cor:
+                        cell.fill = PatternFill(start_color=cor, end_color=cor, fill_type="solid")
+
+        for col in ws.columns:
+            max_length = 0
+            column = col[0].column_letter
+            for cell in col:
+                if cell.value:
+                    max_length = max(max_length, len(str(cell.value)))
+            ws.column_dimensions[column].width = min(max_length + 4, 60)
+
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
 
     wb.save(arquivo)
 
@@ -145,16 +129,24 @@ def estilizar_planilha(arquivo):
 # FUNÇÕES DE PROCESSAMENTO
 # ==========================================
 
-def gerar_indice_excel(pasta_diarios, arquivo_saida):
-    """Retorna (DataFrame ou None, mensagem, lista de erros por arquivo)."""
+def gerar_indice_excel(pasta_diarios, pasta_acervo, arquivo_saida):
+    """Retorna (índice ou None, detalhes por ato, mensagem, lista de erros por arquivo).
+
+    Uma página entra no índice quando tem portaria de cargo/função ou apostila (ou "tornar sem efeito")
+    com efeito financeiro. Apostilas que não puderam ser confirmadas também entram, marcadas em
+    "PÁGINAS A VERIFICAR" e explicadas na aba "Detalhes" da planilha.
+    """
     if not os.path.exists(pasta_diarios):
-        return None, f"A pasta '{pasta_diarios}' não existe.", []
+        return None, None, f"A pasta '{pasta_diarios}' não existe.", []
 
     arquivos_pdf = listar_pdfs(pasta_diarios)
     if not arquivos_pdf:
-        return None, "Nenhum PDF encontrado na pasta de íntegras.", []
+        return None, None, "Nenhum PDF encontrado na pasta de íntegras.", []
 
+    # As portarias citadas pelas apostilas são procuradas nos DJEs da própria pasta e no acervo
+    busca = BuscaPortarias([pasta_diarios, pasta_acervo])
     resultados = []
+    detalhes = []
     erros = []
     barra_progresso = st.progress(0)
 
@@ -166,25 +158,29 @@ def gerar_indice_excel(pasta_diarios, arquivo_saida):
             data_formatada = "Data Inválida"
 
         try:
-            blocos, inicios_pagina = dividir_em_portarias(ler_paginas_pdf(os.path.join(pasta_diarios, arquivo)))
-            paginas_do_dia = set()
-            # A página entra no índice quando o cargo e a ação aparecem na MESMA portaria.
-            # Se a portaria passa de uma página para outra, todas as páginas com os termos entram.
-            for bloco, inicio_bloco in blocos:
-                ocorrencias_cargo = list(TERMOS_CARGOS.finditer(bloco))
-                ocorrencias_acao = list(TERMOS_ACAO.finditer(bloco))
-                if ocorrencias_cargo and ocorrencias_acao:
-                    for m in ocorrencias_cargo + ocorrencias_acao:
-                        paginas_do_dia.add(numero_da_pagina(inicios_pagina, inicio_bloco + m.start()))
+            contadas, a_verificar, detalhes_do_dia = analisar_documento(os.path.join(pasta_diarios, arquivo), busca)
+            paginas_do_dia = contadas | a_verificar
 
             if paginas_do_dia:
                 if data_formatada == "Data Inválida":
                     erros.append(f"{arquivo}: o nome não começa com a data no formato AAAAMMDD; a Aba 2 não conseguirá separar suas páginas.")
                 resultados.append({
                     "DATA": data_formatada,
-                    "PORTARIA": "CAI, DAI, DAS",
+                    "PORTARIA": "CAI, DAI, DAS, APOSTILAS",
                     "PÁGINAS": ", ".join(str(p) for p in sorted(paginas_do_dia)),
+                    "PÁGINAS A VERIFICAR": ", ".join(str(p) for p in sorted(a_verificar)),
                     "FOLHA": "PROCESSADO"
+                })
+            for d in detalhes_do_dia:
+                detalhes.append({
+                    "DATA": data_formatada,
+                    "PÁGINA": ", ".join(str(p) for p in d["paginas"]),
+                    "TIPO": d["tipo"],
+                    "RESULTADO": d["resultado"],
+                    "MOTIVO": d["motivo"],
+                    "REFERÊNCIA": d["referencia"],
+                    "TRECHO": d["trecho"],
+                    "ARQUIVO": arquivo
                 })
         except Exception as e:
             erros.append(f"Erro ao processar {arquivo}: {e}")
@@ -192,12 +188,16 @@ def gerar_indice_excel(pasta_diarios, arquivo_saida):
         barra_progresso.progress((i + 1) / len(arquivos_pdf))
 
     if not resultados:
-        return None, "Nenhuma ocorrência encontrada nos PDFs.", erros
+        return None, None, "Nenhuma ocorrência encontrada nos PDFs.", erros
 
     df = pd.DataFrame(resultados)
-    df.to_excel(arquivo_saida, index=False)
+    df_detalhes = pd.DataFrame(detalhes)
+    # A primeira aba continua sendo o índice lido pelas Abas 2 e 3
+    with pd.ExcelWriter(arquivo_saida) as writer:
+        df.to_excel(writer, sheet_name="Índice", index=False)
+        df_detalhes.to_excel(writer, sheet_name="Detalhes", index=False)
     estilizar_planilha(arquivo_saida)
-    return df, "Sucesso", erros
+    return df, df_detalhes, "Sucesso", erros
 
 def separar_pdfs(caminho_planilha, diretorio_integra, diretorio_destino, sobrescrever=False):
     df, erro = ler_planilha_indice(caminho_planilha)
@@ -312,8 +312,11 @@ def extrair_texto_portarias(pasta_diarios, arquivo_saida_txt):
     with open(arquivo_saida_txt, 'w', encoding='utf-8') as arquivo_txt:
         for i, arquivo in enumerate(arquivos_pdf):
             try:
-                blocos, _ = dividir_em_portarias(ler_paginas_pdf(os.path.join(pasta_diarios, arquivo)))
-                for bloco, _ in blocos:
+                atos, _ = dividir_em_atos(ler_paginas_pdf(os.path.join(pasta_diarios, arquivo)))
+                for ato in atos:
+                    if ato.tipo != "portaria":
+                        continue
+                    bloco = ato.texto
                     if TERMOS_CARGOS.search(bloco) and TERMOS_ACAO.search(bloco) and TERMO_MATRICULA.search(bloco):
                         bloco_limpo = re.sub(r'\s+', ' ', bloco).strip()
                         arquivo_txt.write(bloco_limpo + "\n\n\n")
@@ -341,6 +344,12 @@ with st.sidebar:
     st.header("⚙️ Configurações de Diretórios")
     diretorio_integra = resolver_caminho(st.text_input("Pasta dos PDFs na Íntegra", value="./DO"))
     diretorio_separados = resolver_caminho(st.text_input("Pasta dos PDFs Separados", value="./DJE_Separados"))
+    diretorio_acervo = resolver_caminho(st.text_input(
+        "Pasta do Acervo (DJEs anteriores)",
+        value="./Acervo",
+        help="DJEs de datas anteriores, com o mesmo padrão de nome (AAAAMMDD...). Usado para consultar a "
+             "portaria original citada em apostilas quando ela não está na pasta dos PDFs na Íntegra."
+    ))
 
     st.divider()
     st.header("🗂️ Padrão de Nomenclatura")
@@ -381,15 +390,21 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 with tab1:
     st.subheader("Gerar Planilha de Ocorrências no DJE")
-    st.write("Varre os arquivos na íntegra buscando portarias com incidência de cargos (CAI, DAI, DAS) e ações administrativas.")
+    st.write(
+        "Varre os arquivos na íntegra buscando portarias com incidência de cargos (CAI, DAI, DAS) e ações administrativas, "
+        "e apostilas (ou atos que tornam portarias sem efeito) com efeito financeiro. Quando a apostila não é clara, "
+        "a portaria original é consultada na pasta dos PDFs na Íntegra e no Acervo."
+    )
+    if not os.path.isdir(diretorio_acervo):
+        st.caption(f"ℹ️ A pasta do Acervo (`{diretorio_acervo}`) não existe: apostilas que citam DJEs fora do período ficarão como \"a verificar\".")
 
     if st.button("▶️ Mapear e Gerar Excel", type="primary"):
         with st.spinner("Analisando páginas do DJE..."):
             arquivo_saida = nome_com_timestamp(planilha_base)
-            df, msg, erros = gerar_indice_excel(diretorio_integra, os.path.join(BASE_DIR, arquivo_saida))
+            df, df_detalhes, msg, erros = gerar_indice_excel(diretorio_integra, diretorio_acervo, os.path.join(BASE_DIR, arquivo_saida))
         # O resultado fica guardado na sessão e a página é recarregada para o seletor do menu lateral
         # já aparecer com a planilha nova selecionada.
-        st.session_state.resultado_indice = {"arquivo": arquivo_saida, "df": df, "msg": msg, "erros": erros}
+        st.session_state.resultado_indice = {"arquivo": arquivo_saida, "df": df, "detalhes": df_detalhes, "msg": msg, "erros": erros}
         if df is not None:
             st.session_state.planilha_recem_gerada = arquivo_saida
         st.rerun()
@@ -399,6 +414,15 @@ with tab1:
         if resultado["df"] is not None:
             st.success(f"Arquivo '{resultado['arquivo']}' gerado com sucesso! As próximas abas já estão configuradas para utilizá-lo.")
             st.dataframe(resultado["df"], width="stretch")
+
+            detalhes = resultado["detalhes"]
+            apostilas = detalhes[detalhes["TIPO"] != "Portaria"]
+            a_verificar = (resultado["df"]["PÁGINAS A VERIFICAR"] != "").sum()
+            if a_verificar:
+                st.warning(f"⚠️ {a_verificar} dia(s) têm páginas incluídas por apostilas que precisam de conferência manual "
+                           "(coluna \"PÁGINAS A VERIFICAR\"). O motivo está na aba \"Detalhes\" da planilha.")
+            with st.expander(f"📎 Apostilas e \"tornar sem efeito\" analisados ({len(apostilas)})"):
+                st.dataframe(apostilas, width="stretch", hide_index=True)
         else:
             st.error(resultado["msg"])
         if resultado["erros"]:
