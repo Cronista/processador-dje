@@ -1,0 +1,6 @@
+* text=auto eol=lf
+# O cmd do Windows precisa de CRLF nos arquivos .bat
+*.bat text eol=crlf
+*.pdf binary
+*.docx binary
+*.xlsx binary

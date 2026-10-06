@@ -7,7 +7,10 @@ __pycache__/
 # Dados de trabalho (PDFs do DJE e recortes)
 DO/
 DJE_Separados/
+Acervo/
 *.pdf
+# ...exceto os exemplos de calibração, usados por tests/testar_exemplos.py
+!exemplos_apostilas/**/*.pdf
 
 # Arquivos gerados pelo sistema
 DO-exp_Processado_Agrupado*.xlsx
@@ -16,7 +19,3 @@ Saidas_da_folha*
 
 # Arquivos temporários do Office
 ~$*
-
-# Acervo de DJEs anteriores e exemplos de calibração (contêm dados de servidores)
-Acervo/
-exemplos_apostilas/
