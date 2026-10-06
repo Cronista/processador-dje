@@ -1,0 +1,17 @@
+# Ambiente Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Dados de trabalho (PDFs do DJE e recortes)
+DO/
+DJE_Separados/
+*.pdf
+
+# Arquivos gerados pelo sistema
+DO-exp_Processado_Agrupado*.xlsx
+Portarias_requisitados*.txt
+
+# Arquivos temporários do Office
+~$*
