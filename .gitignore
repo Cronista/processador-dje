@@ -4,10 +4,10 @@ venv/
 __pycache__/
 *.pyc
 
-# Dados de trabalho (PDFs do DJE e recortes)
-DO/
-DJE_Separados/
-Acervo/
+# Dados de trabalho (PDFs do DJE e recortes), só na raiz do projeto
+/DO/
+/DJE_Separados/
+/Acervo/
 *.pdf
 # ...exceto os exemplos de calibração, usados por tests/testar_exemplos.py
 !exemplos_apostilas/**/*.pdf
