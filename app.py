@@ -9,8 +9,9 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Border, Side, Alignment, Font
 
 from analise_dje import (
-    TERMOS_CARGOS, TERMOS_ACAO, TERMO_MATRICULA, CONTA, NAO_CONTA, VERIFICAR,
-    listar_pdfs, ler_paginas_pdf, dividir_em_atos, analisar_documento, BuscaPortarias
+    TERMOS_CARGOS, TERMOS_ACAO, TERMO_MATRICULA, CONTA, NAO_CONTA, VERIFICAR, SAIU, NAO_SAIU,
+    listar_pdfs, ler_paginas_pdf, dividir_em_atos, analisar_documento, BuscaPortarias,
+    analisar_saidas_da_folha, formatar
 )
 
 # ==========================================
@@ -42,9 +43,10 @@ def nome_com_timestamp(nome_base):
     nome, ext = os.path.splitext(nome_base)
     return f"{nome}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{ext}"
 
-def listar_planilhas():
+def listar_planilhas(prefixos_ignorados=()):
     """Planilhas .xlsx da pasta do sistema, da mais recente para a mais antiga."""
-    arquivos = [f for f in os.listdir(BASE_DIR) if f.lower().endswith(".xlsx") and not f.startswith("~$")]
+    arquivos = [f for f in os.listdir(BASE_DIR)
+                if f.lower().endswith(".xlsx") and not f.startswith("~$") and not f.startswith(tuple(prefixos_ignorados))]
     return sorted(arquivos, key=lambda f: os.path.getmtime(os.path.join(BASE_DIR, f)), reverse=True)
 
 def converter_data(valor):
@@ -84,7 +86,7 @@ def ler_planilha_indice(caminho_planilha):
     return df, None
 
 COLUNAS_TEXTO_LONGO = {"MOTIVO", "REFERÊNCIA", "TRECHO"}
-CORES_RESULTADO = {CONTA: "C6EFCE", NAO_CONTA: "EDEDED", VERIFICAR: "FFEB9C"}
+CORES_RESULTADO = {CONTA: "C6EFCE", NAO_CONTA: "EDEDED", VERIFICAR: "FFEB9C", SAIU: "C6EFCE", NAO_SAIU: "EDEDED"}
 
 def estilizar_planilha(arquivo):
     wb = load_workbook(arquivo)
@@ -106,7 +108,7 @@ def estilizar_planilha(arquivo):
             for cell, coluna in zip(row, cabecalhos):
                 cell.alignment = alinhamento_texto if coluna in COLUNAS_TEXTO_LONGO else alinhamento_centro
                 cell.border = borda_fina
-                if coluna == "RESULTADO":
+                if coluna in ("RESULTADO", "SITUAÇÃO"):
                     # "VERIFICAR (dispensável)" usa a mesma cor de "VERIFICAR"
                     cor = CORES_RESULTADO.get(str(cell.value).split(" (")[0])
                     if cor:
@@ -328,6 +330,50 @@ def extrair_texto_portarias(pasta_diarios, arquivo_saida_txt):
 
     return contador_total, "Sucesso", erros
 
+def gerar_saidas_da_folha(pasta_diarios, nome_base):
+    """Retorna (DataFrame ou None, caminho do Excel, caminho do TXT, mensagem, lista de erros por arquivo)."""
+    if not os.path.exists(pasta_diarios):
+        return None, None, None, f"A pasta '{pasta_diarios}' não existe.", []
+    if not listar_pdfs(pasta_diarios):
+        return None, None, None, "Nenhum PDF na íntegra encontrado.", []
+
+    barra_progresso = st.progress(0)
+    registros, erros = analisar_saidas_da_folha(pasta_diarios, barra_progresso.progress)
+    if not registros:
+        return None, None, None, "Nenhuma exoneração de comissionado ou requisitado (CAI, DAI, DAS) foi encontrada.", erros
+
+    df = pd.DataFrame([{
+        "DATA": formatar(r["data"]) if r["data"] else "Data Inválida",
+        "PÁGINA": r["pagina"],
+        "SERVIDOR": r["servidor"],
+        "MATRÍCULA": r["matricula"],
+        "VÍNCULO": r["vinculo"],
+        "CARGO/FUNÇÃO": r["simbolo"],
+        "A CONTAR DE": formatar(r["a_contar"]) if r["a_contar"] else "",
+        "PORTARIA": r["portaria"],
+        "SITUAÇÃO": r["situacao"],
+        "MOTIVO": r["motivo"],
+        "TRECHO": r["trecho"],
+        "ARQUIVO": r["arquivo"]
+    } for r in registros])
+
+    nome_saida = nome_com_timestamp(nome_base)
+    caminho_xlsx = os.path.join(BASE_DIR, nome_saida + ".xlsx")
+    caminho_txt = os.path.join(BASE_DIR, nome_saida + ".txt")
+    df.to_excel(caminho_xlsx, sheet_name="Saídas da folha", index=False)
+    estilizar_planilha(caminho_xlsx)
+
+    # O TXT traz o texto das portarias de quem saiu da folha (e dos casos a verificar), como na Aba 4
+    with open(caminho_txt, 'w', encoding='utf-8') as arquivo_txt:
+        for r in registros:
+            if r["situacao"] == NAO_SAIU:
+                continue
+            data = formatar(r["data"]) if r["data"] else "Data Inválida"
+            arquivo_txt.write(f"[{r['situacao']}] {data}, p. {r['pagina']} - {r['servidor']}\n")
+            arquivo_txt.write(re.sub(r'\s+', ' ', r["texto"]).strip() + "\n\n\n")
+
+    return df, caminho_xlsx, caminho_txt, "Sucesso", erros
+
 # ==========================================
 # INTERFACE DO USUÁRIO (UI)
 # ==========================================
@@ -355,10 +401,13 @@ with st.sidebar:
     st.header("🗂️ Padrão de Nomenclatura")
     planilha_base = st.text_input("Nome Base da Planilha", value="DO-exp_Processado_Agrupado.xlsx")
     txt_base = st.text_input("Nome Base do TXT", value="Portarias_requisitados.txt")
+    saidas_base = st.text_input("Nome Base das Saídas da Folha", value="Saidas_da_folha",
+                                help="Usado na planilha (.xlsx) e no texto (.txt) gerados na Aba 5.")
 
     # Seletor da planilha usada nas Abas 2 e 3: lista os arquivos da pasta, então sobrevive a recarregar a página
     # e permite usar uma planilha antiga ou corrigida à mão no Excel.
-    planilhas_disponiveis = listar_planilhas()
+    # As planilhas da Aba 5 não são índices de páginas e ficam fora da lista
+    planilhas_disponiveis = listar_planilhas(prefixos_ignorados=[saidas_base] if saidas_base.strip() else [])
     if planilhas_disponiveis:
         if st.session_state.get('planilha_ativa') not in planilhas_disponiveis:
             st.session_state.planilha_ativa = planilhas_disponiveis[0]
@@ -381,11 +430,12 @@ with st.sidebar:
 nome_planilha_ativa = os.path.basename(caminho_planilha_ativa) if caminho_planilha_ativa else "nenhuma"
 
 # --- ABAS DE NAVEGAÇÃO ---
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 1. Indexação (Excel)",
     "✂️ 2. Separação de Páginas",
     "👥 3. Distribuição",
-    "📝 4. Extração de Texto (Requisitados)"
+    "📝 4. Extração de Texto (Requisitados)",
+    "🚪 5. Saídas da Folha (Comissionados)"
 ])
 
 with tab1:
@@ -489,3 +539,46 @@ with tab4:
                 with st.expander(f"⚠️ {len(erros)} PDF(s) não puderam ser lidos", expanded=True):
                     for erro in erros:
                         st.text(erro)
+
+with tab5:
+    st.subheader("Saídas da Folha: Exoneração de Comissionados e Requisitados")
+    st.write(
+        "Lista exonerações e dispensas de cargo/função (CAI, DAI, DAS) de servidores sem vínculo efetivo: "
+        "exclusivamente comissionados (\"Comissionado\" ou matrícula 4000…) e requisitados (matrícula 5…). "
+        "Técnicos, Analistas, Técnicos Judiciários e Oficiais de Justiça são estáveis e não entram. "
+        "Quem for renomeado no mesmo DJE ou em um DJE posterior da pasta dos PDFs na Íntegra não sai da folha."
+    )
+
+    if st.button("▶️ Verificar Saídas da Folha"):
+        with st.spinner("Procurando exonerações e renomeações..."):
+            df, caminho_xlsx, caminho_txt, msg, erros = gerar_saidas_da_folha(diretorio_integra, saidas_base)
+        # Guardado na sessão para que os dois botões de download continuem disponíveis
+        st.session_state.resultado_saidas = {"df": df, "xlsx": caminho_xlsx, "txt": caminho_txt, "msg": msg, "erros": erros}
+
+    resultado = st.session_state.get('resultado_saidas')
+    if resultado:
+        df = resultado["df"]
+        if df is not None:
+            contagem = df["SITUAÇÃO"].value_counts()
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Saíram da folha", int(contagem.get(SAIU, 0)))
+            col2.metric("Renomeados (não saíram)", int(contagem.get(NAO_SAIU, 0)))
+            col3.metric("A verificar", int(contagem.get(VERIFICAR, 0)))
+            st.dataframe(df.drop(columns=["TRECHO"]), width="stretch", hide_index=True)
+
+            col_xlsx, col_txt = st.columns(2)
+            for coluna, caminho, rotulo, mime in [
+                (col_xlsx, resultado["xlsx"], "📥 Baixar Planilha (Excel)", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                (col_txt, resultado["txt"], "📥 Baixar Portarias (TXT)", "text/plain"),
+            ]:
+                if os.path.exists(caminho):
+                    with open(caminho, "rb") as f:
+                        coluna.download_button(label=rotulo, data=f.read(), file_name=os.path.basename(caminho),
+                                               mime=mime, on_click="ignore")
+        else:
+            st.warning(resultado["msg"])
+
+        if resultado["erros"]:
+            with st.expander(f"⚠️ {len(resultado['erros'])} PDF(s) não puderam ser lidos", expanded=True):
+                for erro in resultado["erros"]:
+                    st.text(erro)

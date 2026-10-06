@@ -4,8 +4,10 @@ from __future__ import annotations
 import os
 import re
 import bisect
+import unicodedata
 from dataclasses import dataclass
 from datetime import date
+from functools import lru_cache
 
 import fitz  # PyMuPDF
 
@@ -123,8 +125,15 @@ def _texto_da_pagina(pagina):
     return "\n".join(saida) + "\n" if saida else ""
 
 def ler_paginas_pdf(caminho_pdf):
+    # O texto lido fica em memória: rodar a Aba 1 e depois a Aba 5 não relê os mesmos PDFs.
+    # A data de modificação e o tamanho entram na chave para que um arquivo substituído seja relido.
+    info = os.stat(caminho_pdf)
+    return list(_ler_paginas_em_cache(os.path.abspath(caminho_pdf), info.st_mtime, info.st_size))
+
+@lru_cache(maxsize=64)
+def _ler_paginas_em_cache(caminho_pdf, _mtime, _tamanho):
     with fitz.open(caminho_pdf) as doc:
-        return [_texto_da_pagina(pagina) for pagina in doc]
+        return tuple(_texto_da_pagina(pagina) for pagina in doc)
 
 # ==========================================
 # DIVISÃO EM ATOS
@@ -403,3 +412,163 @@ def analisar_documento(caminho_pdf, busca):
             d["resultado"] = "VERIFICAR (dispensável)"
             d["motivo"] += "; a página já é contabilizada por outro ato"
     return contadas, a_verificar - contadas, detalhes
+
+# ==========================================
+# SAÍDAS DA FOLHA (EXONERAÇÃO DE COMISSIONADOS E REQUISITADOS)
+# ==========================================
+
+SAIU, NAO_SAIU = "SAIU DA FOLHA", "NÃO SAIU"
+
+# Servidores efetivos continuam na folha mesmo perdendo o cargo em comissão ou a função
+CARGOS_ESTAVEIS = re.compile(
+    r't[ée]cnico\s+de\s+atividade\s+judici[áa]ria|analista\s+judici[áa]rio|t[ée]cnico\s+judici[áa]rio|oficial\s+de\s+justi[çc]a',
+    re.IGNORECASE
+)
+NOME = r"[A-ZÀ-ÖØ-Ý][A-ZÀ-ÖØ-Ý'\-]*(?:\s+[A-ZÀ-ÖØ-Ý][A-ZÀ-ÖØ-Ý'\-]*)+"
+A_PEDIDO = r"(?:\s*,\s*a\s+pedido\s*,)?(?:\s+(?i:o|a)\s+(?i:servidora?))?"
+EXONERACAO = re.compile(r'\b(?i:exonerar|dispensar)\b' + A_PEDIDO + r'\s+(?P<nome>' + NOME + r')')
+# "servidores" no plural; o artigo é opcional porque o DJE às vezes erra ("Exonerar a servidores...")
+EXONERACAO_COLETIVA = re.compile(r'\b(?:exonerar|dispensar)\s+(?:\w{1,3}\s+)?(?:seguintes\s+)?servidores\b', re.IGNORECASE)
+NOMEACAO = re.compile(r'\b(?i:nomear|designar)\b' + A_PEDIDO + r'\s+(?P<nome>' + NOME + r')')
+NOMEACAO_COLETIVA = re.compile(r'nome[áa]-l[oa]s|\b(?:nomear|designar)\s+(?:\w{1,3}\s+)?(?:seguintes\s+)?servidores\b', re.IGNORECASE)
+RENOMEADO_NO_ATO = re.compile(r'\be\s+nome[áa]-l[oa]s?\b|nomeando-[oa]', re.IGNORECASE)
+VINCULO_E_MATRICULA = re.compile(
+    r'\s*,(?P<vinculo>.{0,150}?),?\s*matr[íi]cula\s*(?:funcional\s*)?n?[º°o.]*\s*(?P<matricula>\d[\d./\-]*\d)',
+    re.DOTALL
+)
+FIM_DO_ARTIGO = re.compile(r'Art\.\s*2', re.IGNORECASE)
+
+def normalizar_nome(nome):
+    sem_acento = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode()
+    return re.sub(r'\s+', ' ', sem_acento).strip().upper()
+
+def _data_do_arquivo(arquivo):
+    try:
+        return date(int(arquivo[:4]), int(arquivo[4:6]), int(arquivo[6:8]))
+    except ValueError:
+        return None
+
+def _primeira_data_a_contar(texto):
+    for m in A_CONTAR.finditer(texto):
+        d = DATA.match(texto, m.end())
+        if d and _converter_data(d):
+            return _converter_data(d)
+    return None
+
+def _classificar_vinculo(vinculo, matricula, texto_ato):
+    """Retorna 'Estável', 'Comissionado', 'Requisitado' ou None (não identificado)."""
+    if CARGOS_ESTAVEIS.search(vinculo):
+        return "Estável"
+    if re.search(r'comissionad', vinculo, re.IGNORECASE) or re.search(r'exclusivamente\s+comissionad', texto_ato, re.IGNORECASE):
+        return "Comissionado"
+    numero = re.sub(r'[.\-]', '', matricula.split("/")[-1]) if matricula else ""
+    if numero.startswith("4000") and len(numero) >= 7:
+        return "Comissionado"
+    if numero.startswith("5") and len(numero) > 5:
+        return "Requisitado"
+    return None
+
+@dataclass
+class Nomeacao:
+    data: date | None
+    arquivo: str
+    pagina: int
+    portaria: str
+    nomes: set      # nomes normalizados logo após "Nomear"/"Designar"
+    coletiva: str   # texto normalizado quando o ato nomeia uma relação de servidores (tabela)
+
+def _titulo(ato):
+    return next((linha.strip() for linha in ato.texto.split("\n") if linha.strip()), "")
+
+def analisar_saidas_da_folha(pasta, progresso=None):
+    """Procura exonerações/dispensas de cargo ou função (CAI, DAI, DAS) de servidores sem vínculo efetivo.
+
+    A renomeação é procurada nas portarias do mesmo DJE e dos DJEs posteriores da pasta.
+    Retorna (lista de registros, lista de erros por arquivo).
+    """
+    arquivos = listar_pdfs(pasta)
+    documentos, erros = [], []
+    for i, arquivo in enumerate(arquivos):
+        try:
+            atos, inicios = dividir_em_atos(ler_paginas_pdf(os.path.join(pasta, arquivo)))
+            documentos.append((arquivo, _data_do_arquivo(arquivo), atos, inicios))
+        except Exception as e:
+            erros.append(f"Erro ao processar {arquivo}: {e}")
+        if progresso:
+            progresso((i + 1) / len(arquivos))
+
+    # Todas as nomeações/designações do período, para descobrir quem foi renomeado
+    nomeacoes = []
+    for arquivo, data, atos, inicios in documentos:
+        for ato in atos:
+            if ato.tipo != "portaria":
+                continue
+            nomes = {normalizar_nome(m.group("nome")) for m in NOMEACAO.finditer(ato.texto)}
+            coletiva = normalizar_nome(ato.texto) if NOMEACAO_COLETIVA.search(ato.texto) else ""
+            if nomes or coletiva:
+                nomeacoes.append(Nomeacao(data, arquivo, numero_da_pagina(inicios, ato.inicio), _titulo(ato), nomes, coletiva))
+
+    def buscar_renomeacao(nome, data, arquivo_exoneracao, titulo_exoneracao):
+        alvo = normalizar_nome(nome)
+        for n in nomeacoes:
+            if data and n.data and n.data < data:
+                continue
+            if n.arquivo == arquivo_exoneracao and n.portaria == titulo_exoneracao:
+                continue  # o próprio ato de exoneração
+            if alvo in n.nomes or (n.coletiva and re.search(r'\b' + re.escape(alvo) + r'\b', n.coletiva)):
+                return n
+        return None
+
+    registros = []
+    for arquivo, data, atos, inicios in documentos:
+        for ato in atos:
+            if ato.tipo != "portaria":
+                continue
+            base = {"data": data, "arquivo": arquivo, "portaria": _titulo(ato), "trecho": resumir(ato.texto), "texto": ato.texto}
+
+            # Exoneração de uma relação de servidores (tabela): os nomes não podem ser lidos um a um
+            if EXONERACAO_COLETIVA.search(ato.texto) and SIMBOLO.search(ato.texto):
+                renomeia = NOMEACAO_COLETIVA.search(ato.texto)
+                registros.append({**base,
+                    "pagina": numero_da_pagina(inicios, ato.inicio), "servidor": "(relação de servidores)", "matricula": "",
+                    "vinculo": "Comissionado" if re.search(r'comissionad', ato.texto, re.IGNORECASE) else "",
+                    "simbolo": ", ".join(sorted(simbolos(ato.texto))), "a_contar": _primeira_data_a_contar(ato.texto),
+                    "situacao": NAO_SAIU if renomeia else VERIFICAR,
+                    "motivo": "exoneração e renomeação no mesmo ato" if renomeia else "exoneração coletiva: conferir a relação de servidores"})
+                continue
+
+            for m in EXONERACAO.finditer(ato.texto):
+                depois = ato.texto[m.end():m.end() + 700]
+                fim = FIM_DO_ARTIGO.search(depois)
+                depois = depois[:fim.start()] if fim else depois
+                simbolo = SIMBOLO.search(depois)
+                if not simbolo:
+                    continue  # não é cargo/função CAI, DAI ou DAS
+
+                vm = VINCULO_E_MATRICULA.match(depois)
+                vinculo_texto = re.sub(r'\s+', ' ', vm.group("vinculo")).strip() if vm else ""
+                matricula = vm.group("matricula") if vm else ""
+                vinculo = _classificar_vinculo(vinculo_texto, matricula, ato.texto)
+                if vinculo == "Estável":
+                    continue
+
+                nome = re.sub(r'\s+', ' ', m.group("nome")).strip()
+                registro = {**base,
+                    "pagina": numero_da_pagina(inicios, ato.inicio + m.start()), "servidor": nome,
+                    "matricula": matricula, "vinculo": vinculo or vinculo_texto or "Não identificado",
+                    "simbolo": f"{simbolo.group(1).upper()}-{simbolo.group(2)}", "a_contar": _primeira_data_a_contar(depois)}
+
+                renomeacao = buscar_renomeacao(nome, data, arquivo, _titulo(ato))
+                if RENOMEADO_NO_ATO.search(depois):
+                    registro.update(situacao=NAO_SAIU, motivo="renomeado no mesmo ato")
+                elif renomeacao:
+                    quando = f"{formatar(renomeacao.data)}, " if renomeacao.data else ""
+                    registro.update(situacao=NAO_SAIU,
+                                    motivo=f"renomeado em {quando}{renomeacao.arquivo}, p. {renomeacao.pagina} ({renomeacao.portaria})")
+                elif not vinculo:
+                    registro.update(situacao=VERIFICAR, motivo="vínculo não identificado (sem 'comissionado' nem matrícula 4000… ou 5…)")
+                else:
+                    registro.update(situacao=SAIU, motivo="nenhuma renomeação encontrada no período")
+                registros.append(registro)
+
+    return registros, erros

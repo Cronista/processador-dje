@@ -12,6 +12,7 @@ DJE_Separados/
 # Arquivos gerados pelo sistema
 DO-exp_Processado_Agrupado*.xlsx
 Portarias_requisitados*.txt
+Saidas_da_folha*
 
 # Arquivos temporários do Office
 ~$*
