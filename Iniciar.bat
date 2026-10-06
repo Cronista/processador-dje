@@ -22,6 +22,8 @@ call venv\Scripts\activate
 :: Roda sempre: na primeira vez instala tudo; depois so instala o que mudou no requirements.txt
 echo [2/3] Verificando bibliotecas necessarias...
 pip install -r requirements.txt --quiet --disable-pip-version-check
+:: OCR opcional: le trechos de PDF desenhados em vez de texto. Se falhar, o sistema funciona sem ele.
+pip install -r requirements-ocr.txt --quiet --disable-pip-version-check || echo [aviso] OCR nao instalado. O sistema funciona normalmente sem ele.
 
 echo [3/3] Abrindo a interface no navegador...
 echo.

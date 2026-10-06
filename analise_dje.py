@@ -63,8 +63,10 @@ DATA = re.compile(
 )
 A_CONTAR = re.compile(r'a\s+contar\s+(?:de|do\s+dia|da\s+data\s+de)?\s*', re.IGNORECASE)
 
-# Trechos que o PDF traz desenhados (contorno das letras) em vez de texto: não podem ser lidos
+# Trechos que o PDF traz desenhados (contorno das letras) em vez de texto. Acontece em páginas geradas pelo
+# "Imprimir em PDF" do Windows; o DJE original traz texto normal. São lidos por OCR quando ele está instalado.
 MARCA_ILEGIVEL = "⟦trecho ilegível⟧"
+MARCA_OCR_INICIO, MARCA_OCR_FIM = "⟪", "⟫"
 LARGURA_MINIMA_ILEGIVEL = 25  # pontos; abaixo disso costuma ser só um travessão ou aspas
 
 CONTA, NAO_CONTA, VERIFICAR = "CONTA", "NÃO CONTA", "VERIFICAR"
@@ -102,11 +104,44 @@ def _trechos_desenhados(pagina):
         trechos.append(atual)
     return [t for t in trechos if t.width >= LARGURA_MINIMA_ILEGIVEL]
 
+_motor_ocr = None
+
+def _ocr():
+    """Motor de OCR (RapidOCR), carregado só quando aparece o primeiro trecho desenhado.
+
+    O OCR é opcional: se a biblioteca não estiver instalada, retorna None e o trecho fica como MARCA_ILEGIVEL.
+    """
+    global _motor_ocr
+    if _motor_ocr is None:
+        try:
+            from rapidocr import RapidOCR
+            _motor_ocr = RapidOCR()
+        except Exception:
+            _motor_ocr = False
+    return _motor_ocr or None
+
+def ocr_disponivel():
+    return _ocr() is not None
+
+def _ler_trecho_desenhado(pagina, trecho):
+    """Texto do trecho desenhado lido por OCR, entre MARCA_OCR_INICIO e MARCA_OCR_FIM; MARCA_ILEGIVEL se não der."""
+    motor = _ocr()
+    if motor:
+        try:
+            area = fitz.Rect(trecho.x0 - 3, trecho.y0 - 3, trecho.x1 + 3, trecho.y1 + 3)
+            resultado = motor(pagina.get_pixmap(dpi=300, clip=area).tobytes("png"))
+            partes = [t for t, nota in zip(resultado.txts or (), resultado.scores or ()) if nota >= 0.5]
+            if partes:
+                return MARCA_OCR_INICIO + " ".join(partes) + MARCA_OCR_FIM
+        except Exception:
+            pass
+    return MARCA_ILEGIVEL
+
 def _texto_da_pagina(pagina):
-    """Mesmo texto de pagina.get_text(), com MARCA_ILEGIVEL onde há trechos desenhados."""
+    """Mesmo texto de pagina.get_text(), com o conteúdo dos trechos desenhados lido por OCR (ou MARCA_ILEGIVEL)."""
     linhas = [(fitz.Rect(linha["bbox"]), "".join(s["text"] for s in linha["spans"]))
               for bloco in pagina.get_text("dict")["blocks"] for linha in bloco.get("lines", [])]
-    marcas = {}  # índice da linha -> quantidade de marcas a inserir depois dela
+    inseridos = {}  # índice da linha -> textos a inserir depois dela (-1: antes da primeira linha)
     for trecho in _trechos_desenhados(pagina):
         sobrepostas = [i for i, (r, _) in enumerate(linhas) if r.y0 < trecho.y1 and trecho.y0 < r.y1]
         if sobrepostas:
@@ -114,14 +149,12 @@ def _texto_da_pagina(pagina):
         else:
             seguintes = [i for i, (r, _) in enumerate(linhas) if r.y0 >= trecho.y1]
             i = (seguintes[0] - 1) if seguintes else len(linhas) - 1
-        marcas[i] = marcas.get(i, 0) + 1
+        inseridos.setdefault(i, []).append(_ler_trecho_desenhado(pagina, trecho))
 
-    saida = []
-    if -1 in marcas:
-        saida.append(MARCA_ILEGIVEL)
+    saida = list(inseridos.get(-1, []))
     for i, (_, texto) in enumerate(linhas):
         saida.append(texto)
-        saida.extend([MARCA_ILEGIVEL] * marcas.get(i, 0))
+        saida.extend(inseridos.get(i, []))
     return "\n".join(saida) + "\n" if saida else ""
 
 def ler_paginas_pdf(caminho_pdf):
@@ -387,6 +420,8 @@ def analisar_documento(caminho_pdf, busca):
     for ato in atos:
         if ato.tipo == "apostila" or (ato.tipo == "portaria" and TORNAR_SEM_EFEITO.search(ato.texto)):
             resultado, motivo, referencia = avaliar_apostila(ato, busca)
+            if MARCA_OCR_INICIO in ato.texto:
+                motivo += " (parte do texto foi lida por OCR: conferir)"
             paginas = paginas_do_ato(ato, inicios_pagina)
             tipo = "Tornar sem efeito" if TORNAR_SEM_EFEITO.search(ato.texto) else "Apostila"
         elif ato.tipo == "portaria" and eh_portaria_de_cargo(ato.texto):

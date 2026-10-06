@@ -1,0 +1,4 @@
+# Opcional: OCR para trechos de PDF desenhados em vez de texto (ex.: páginas geradas pelo "Imprimir em PDF").
+# Se a instalação falhar, o sistema funciona normalmente sem ele.
+rapidocr
+onnxruntime
