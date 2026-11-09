@@ -19,3 +19,6 @@ Saidas_da_folha*
 
 # Arquivos temporários do Office
 ~$*
+
+# Instruções do Claude Code específicas de cada máquina
+CLAUDE.local.md
