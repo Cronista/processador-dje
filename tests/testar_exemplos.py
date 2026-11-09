@@ -33,6 +33,8 @@ APOSTILAS = [
     (DO, "20260904ADMDJETJRJ_pg65.pdf", "Ana Lucia Parada Macedo", a.NAO_CONTA, None),
     (DO, "20260908ADMDJETJRJ_pg50.pdf", "CAROLAINE DA SILVA", a.NAO_CONTA, None),
     (ACERVO, "20260902ADMDJETJRJ_pg197.pdf", "Referente à lotação", a.NAO_CONTA, None),
+    # "Tornar sem efeito" sem menção a cargo/função e sem a portaria original no acervo: sem efeito financeiro
+    (ACERVO, "20260902ADMDJETJRJ_pg197.pdf", "2725/2026", a.NAO_CONTA, None),
 ]
 
 # Páginas que não podem entrar no índice (ex.: DECISÃO que cita cargo e exoneração)

@@ -377,7 +377,9 @@ def avaliar_apostila(ato, busca):
             return CONTA, "torna sem efeito portaria de cargo/função", referencia
         if all(originais):
             return NAO_CONTA, "torna sem efeito portaria que não é de cargo/função", referencia
-        return VERIFICAR, "torna portaria sem efeito, mas a portaria original não foi encontrada", referencia
+        # Sem menção a cargo/função no ato e sem a original para conferir: não há efeito financeiro a apontar
+        return NAO_CONTA, ("torna portaria sem efeito sem mencionar cargo/função (CAI, DAI, DAS, cargo em comissão "
+                           "ou função gratificada); a portaria original não foi encontrada"), referencia
 
     original = originais[0]
     if original and not INDICIO_CARGO_FUNCAO.search(original.texto):
@@ -466,6 +468,8 @@ EXONERACAO = re.compile(r'\b(?i:exonerar|dispensar)\b' + A_PEDIDO + r'\s+(?P<nom
 EXONERACAO_COLETIVA = re.compile(r'\b(?:exonerar|dispensar)\s+(?:\w{1,3}\s+)?(?:seguintes\s+)?servidores\b', re.IGNORECASE)
 NOMEACAO = re.compile(r'\b(?i:nomear|designar)\b' + A_PEDIDO + r'\s+(?P<nome>' + NOME + r')')
 NOMEACAO_COLETIVA = re.compile(r'nome[áa]-l[oa]s|\b(?:nomear|designar)\s+(?:\w{1,3}\s+)?(?:seguintes\s+)?servidores\b', re.IGNORECASE)
+# Menção a estabilidade provisória: o servidor (comissionado ou efetivo) continua na folha
+ESTABILIDADE_PROVISORIA = re.compile(r'estabilidade\s+provis[óo]ria', re.IGNORECASE)
 RENOMEADO_NO_ATO = re.compile(r'\be\s+nome[áa]-l[oa]s?\b|nomeando-[oa]', re.IGNORECASE)
 VINCULO_E_MATRICULA = re.compile(
     r'\s*,(?P<vinculo>.{0,150}?),?\s*matr[íi]cula\s*(?:funcional\s*)?n?[º°o.]*\s*(?P<matricula>\d[\d./\-]*\d)',
@@ -562,16 +566,20 @@ def analisar_saidas_da_folha(pasta, progresso=None):
             base = {"data": data, "arquivo": arquivo, "portaria": _titulo(ato), "trecho": resumir(ato.texto), "texto": ato.texto}
 
             # Exoneração de uma relação de servidores (tabela): os nomes não podem ser lidos um a um
+            estabilidade_no_ato = bool(ESTABILIDADE_PROVISORIA.search(ato.texto))
             if EXONERACAO_COLETIVA.search(ato.texto) and SIMBOLO.search(ato.texto):
                 renomeia = NOMEACAO_COLETIVA.search(ato.texto)
+                motivo = "exoneração e renomeação no mesmo ato" if renomeia else "exoneração coletiva: conferir a relação de servidores"
+                if estabilidade_no_ato:
+                    motivo += "; o ato menciona estabilidade provisória (quem a tiver não sai da folha)"
                 registros.append({**base,
                     "pagina": numero_da_pagina(inicios, ato.inicio), "servidor": "(relação de servidores)", "matricula": "",
                     "vinculo": "Comissionado" if re.search(r'comissionad', ato.texto, re.IGNORECASE) else "",
                     "simbolo": ", ".join(sorted(simbolos(ato.texto))), "a_contar": _primeira_data_a_contar(ato.texto),
-                    "situacao": NAO_SAIU if renomeia else VERIFICAR,
-                    "motivo": "exoneração e renomeação no mesmo ato" if renomeia else "exoneração coletiva: conferir a relação de servidores"})
+                    "situacao": NAO_SAIU if renomeia else VERIFICAR, "motivo": motivo})
                 continue
 
+            exoneracoes_no_ato = len(EXONERACAO.findall(ato.texto))
             for m in EXONERACAO.finditer(ato.texto):
                 depois = ato.texto[m.end():m.end() + 700]
                 fim = FIM_DO_ARTIGO.search(depois)
@@ -596,6 +604,11 @@ def analisar_saidas_da_folha(pasta, progresso=None):
                 renomeacao = buscar_renomeacao(nome, data, arquivo, _titulo(ato))
                 if RENOMEADO_NO_ATO.search(depois):
                     registro.update(situacao=NAO_SAIU, motivo="renomeado no mesmo ato")
+                elif ESTABILIDADE_PROVISORIA.search(depois) or (estabilidade_no_ato and exoneracoes_no_ato == 1):
+                    registro.update(situacao=NAO_SAIU, motivo="o ato menciona estabilidade provisória")
+                elif estabilidade_no_ato:
+                    registro.update(situacao=VERIFICAR,
+                                    motivo="o ato exonera mais de um servidor e menciona estabilidade provisória: conferir a quem se aplica")
                 elif renomeacao:
                     quando = f"{formatar(renomeacao.data)}, " if renomeacao.data else ""
                     registro.update(situacao=NAO_SAIU,

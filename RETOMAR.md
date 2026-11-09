@@ -70,7 +70,9 @@ Conta a página quando a **mesma portaria** tem `CAI-`/`DAI-`/`DAS-` e nomeaçã
 Conta quando altera portaria de **cargo em comissão/função gratificada** e:
 - muda a data **"a contar"** (de um dia para outro), ou
 - muda o **símbolo** (ex.: DAI → DAS), ou
-- torna a portaria sem efeito.
+- torna a portaria sem efeito **e** há menção a cargo/função (no próprio ato ou na portaria original).
+  "Tornar sem efeito" sem menção a CAI/DAI/DAS, cargo em comissão ou função gratificada, cuja portaria
+  original não está nas pastas, **não conta** (ex.: PORTARIA 2725, 02/09 p.197 — decisão do usuário, 09/11/2026).
 
 Não contam: correção de nome, matrícula, lotação, remoção, horário, "cargo efetivo", substituto eventual.
 Quando a apostila só reescreve o ato ("fica declarado que a referida portaria..."), a **portaria original**
@@ -83,7 +85,8 @@ Exoneração/dispensa de CAI/DAI/DAS de quem **não tem vínculo efetivo**:
 "Comissionado"/"exclusivamente comissionado", matrícula `4000…` ou requisitado (`5…`, mais de 5 dígitos).
 Estáveis (ficam de fora): Técnico de Atividade Judiciária, Analista Judiciário, Técnico Judiciário,
 Oficial de Justiça. **Renomeação** (nomear/designar a mesma pessoa no mesmo DJE ou em DJE posterior da
-pasta DO) → "NÃO SAIU". A busca é **pelo nome** (a matrícula muda); só vale o nome logo após
+pasta DO) → "NÃO SAIU". **Estabilidade provisória** mencionada no ato de exoneração → "NÃO SAIU"
+(comissionado ou efetivo); se o ato exonera mais de um servidor e a menção não está no artigo dele → "VERIFICAR". A busca é **pelo nome** (a matrícula muda); só vale o nome logo após
 "Nomear"/"Designar", para não confundir com "vaga decorrente da exoneração de FULANO".
 
 ### 4.5 Trechos desenhados e OCR
@@ -94,17 +97,17 @@ e o insere entre `⟪ ⟫`; senão, marca `⟦trecho ilegível⟧`.
 
 ---
 
-## 5. Estado atual (06/10/2026)
+## 5. Estado atual (09/11/2026)
 
-- `tests/testar_exemplos.py`: 16/16 casos do gabarito corretos (com OCR).
+- `tests/testar_exemplos.py`: 17/17 casos do gabarito corretos (com OCR), também no Python 3.10 da VPS.
+- Aba 5: a coluna TRECHO do Excel traz o texto completo do ato (antes era cortado em 300 caracteres).
 - Divisão em atos validada nos DJEs completos de 03/08 e 10/08: nenhuma portaria de cargo perdida;
   6 falsos positivos antigos (decisões) eliminados.
 - Histórico do Git: estado inicial → limpeza → apostilas → Aba 5 → OCR.
 
 ## 6. Pendências e limitações conhecidas
 
-- "Tornar sem efeito" da PORTARIA 2725 (02/09 p.197) fica "a verificar": as portarias canceladas
-  (01/09) não estão no acervo. Não estava no gabarito — confirmar com o usuário se conta.
+- Estabilidade provisória: regra testada só com PDF sintético (não há exemplo real).
 - Aba 5: renomeação publicada depois do último DJE da pasta DO não é vista; exoneração em **tabela**
   sem renomeação aparece como uma linha "(relação de servidores)" para conferência manual.
 - Não há exemplos reais de **requisitado exonerado** nem de **renomeação em outro dia** (testados só

@@ -353,7 +353,8 @@ def gerar_saidas_da_folha(pasta_diarios, nome_base):
         "PORTARIA": r["portaria"],
         "SITUAÇÃO": r["situacao"],
         "MOTIVO": r["motivo"],
-        "TRECHO": r["trecho"],
+        # Texto completo do ato (o Excel aceita até 32.767 caracteres por célula)
+        "TRECHO": re.sub(r'\s+', ' ', r["texto"]).strip()[:32000],
         "ARQUIVO": r["arquivo"]
     } for r in registros])
 
@@ -546,7 +547,8 @@ with tab5:
         "Lista exonerações e dispensas de cargo/função (CAI, DAI, DAS) de servidores sem vínculo efetivo: "
         "exclusivamente comissionados (\"Comissionado\" ou matrícula 4000…) e requisitados (matrícula 5…). "
         "Técnicos, Analistas, Técnicos Judiciários e Oficiais de Justiça são estáveis e não entram. "
-        "Quem for renomeado no mesmo DJE ou em um DJE posterior da pasta dos PDFs na Íntegra não sai da folha."
+        "Quem for renomeado no mesmo DJE ou em um DJE posterior da pasta dos PDFs na Íntegra não sai da folha, "
+        "nem quem tiver estabilidade provisória mencionada no ato de exoneração."
     )
 
     if st.button("▶️ Verificar Saídas da Folha"):
