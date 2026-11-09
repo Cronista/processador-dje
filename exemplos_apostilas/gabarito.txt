@@ -21,3 +21,5 @@
 20260908ADMDJETJRJ_pg50 (CAROLAINE DA SILVA DOS SANTOS) NÃO CONTA -> descritivo. Apesar de falar "cargo efetivo", não é sobre cargo comissionado ou função gratificada ("CAI-", "DAI-" ou "DAS-"). Considerado sem efeito financeiro para nossos propósitos.
 
 20260812ADMDJETJRJ_pg3 (HELLEN SANTOS REGO CABRAL) CONTA -> descritiva. O exemplo clássico. É lido no texto o cargo/função ("DAI-6") e é dito alteração na data "a contar".
+
+20260914ADMDJETJRJ_pg67 (LILIANA PAIVA CAMPINHO) NÃO CONTA -> não descrtiva. O mudança faz menção a uma tabela em 20260924ADMDJETJRJ_pag6.pdf e 20260928ADMDJETJRJ_pg30.pdf que apenas muda a matrícula funcional. Sem efeito financeiro direto.

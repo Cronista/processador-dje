@@ -99,7 +99,7 @@ e o insere entre `⟪ ⟫`; senão, marca `⟦trecho ilegível⟧`.
 
 ## 5. Estado atual (09/11/2026)
 
-- `tests/testar_exemplos.py`: 17/17 casos do gabarito corretos (com OCR), também no Python 3.10 da VPS.
+- `tests/testar_exemplos.py`: 18/18 casos do gabarito corretos (com OCR), também no Python 3.10 da VPS.
 - Aba 5: a coluna TRECHO do Excel traz o texto completo do ato (antes era cortado em 300 caracteres).
 - Divisão em atos validada nos DJEs completos de 03/08 e 10/08: nenhuma portaria de cargo perdida;
   6 falsos positivos antigos (decisões) eliminados.
