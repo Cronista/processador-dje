@@ -10,9 +10,11 @@ __pycache__/
 /Acervo/
 *.pdf
 # ...exceto os exemplos de calibração, usados por tests/testar_exemplos.py
-!exemplos_apostilas/**/*.pdf
+!sistema/exemplos_apostilas/**/*.pdf
 
-# Arquivos gerados pelo sistema
+# Arquivos gerados pelo sistema (Resultados/<AAAA-MM MÊS>/)
+/Resultados/
+# ...e os soltos na raiz, de antes da pasta Resultados
 DO-exp_Processado_Agrupado*.xlsx
 Portarias_requisitados*.txt
 Saidas_da_folha*

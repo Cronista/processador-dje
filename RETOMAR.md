@@ -8,7 +8,9 @@
 ## 1. O que é
 
 App **Streamlit** que automatiza a triagem do **Diário da Justiça Eletrônico do TJRJ (DJERJ)**,
-Caderno Administrativo. A partir dos PDFs completos do DJE de um período:
+Caderno Administrativo. A partir dos PDFs completos do DJE de um período, e da **competência do DO** (mês e ano,
+obrigatória no menu lateral), gera em `Resultados/<AAAA-MM MÊS>/` arquivos com a competência no nome
+(ex.: `DO-exp_Processado_Agrupado_NOVEMBRO-2026_20261117_161727.xlsx`):
 
 | Aba | O que faz |
 |---|---|
@@ -27,12 +29,14 @@ Usuários não técnicos abrem pelo `Iniciar.bat` (cria o `venv`, instala depend
 | O quê | Onde |
 |---|---|
 | Código-fonte | GitHub `Cronista/processador-dje` (privado), branch `main` |
-| Interface (Streamlit) e geração de Excel/TXT | [app.py](app.py) |
-| Regras de análise do texto do DJE | [analise_dje.py](analise_dje.py) |
-| Teste contra o gabarito | [tests/testar_exemplos.py](tests/testar_exemplos.py) |
-| Exemplos reais + gabarito do usuário | [exemplos_apostilas/](exemplos_apostilas/) (`DO/`, `acervo/`, `gabarito.txt`) |
-| Dependências | `requirements.txt` (obrigatórias), `requirements-ocr.txt` (OCR opcional) |
-| PDFs de trabalho (`DO/`, `Acervo/`, `DJE_Separados/`) e arquivos gerados | Só no computador do usuário — **fora do Git** |
+| Código (tudo o que é do sistema) | [sistema/](sistema/) |
+| Interface (Streamlit) e geração de Excel/TXT | [sistema/app.py](sistema/app.py) |
+| Regras de análise do texto do DJE | [sistema/analise_dje.py](sistema/analise_dje.py) |
+| Teste contra o gabarito | [sistema/tests/testar_exemplos.py](sistema/tests/testar_exemplos.py) |
+| Exemplos reais + gabarito do usuário | [sistema/exemplos_apostilas/](sistema/exemplos_apostilas/) (`DO/`, `acervo/`, `gabarito.txt`) |
+| Dependências | `sistema/requirements.txt` (obrigatórias), `sistema/requirements-ocr.txt` (OCR opcional) |
+| PDFs de trabalho (`DO/`, `Acervo/`, `DJE_Separados/`) e arquivos gerados (`Resultados/`) | Na raiz, só no computador do usuário — **fora do Git** |
+| Na raiz também | `Iniciar.bat`, `MANUAL.docx`, `RETOMAR.md`, `CLAUDE.md` e o `venv` |
 
 ---
 
@@ -41,13 +45,13 @@ Usuários não técnicos abrem pelo `Iniciar.bat` (cria o `venv`, instala depend
 ```bash
 python -m venv venv
 venv\Scripts\activate            # Windows
-pip install -r requirements.txt
-pip install -r requirements-ocr.txt   # opcional
-streamlit run app.py
-python tests/testar_exemplos.py       # deve terminar com "Tudo certo."
+pip install -r sistema/requirements.txt
+pip install -r sistema/requirements-ocr.txt   # opcional
+streamlit run sistema/app.py
+python sistema/tests/testar_exemplos.py       # deve terminar com "Tudo certo."
 ```
 
-Os PDFs do DJE vão em `DO/` (nome começando por `AAAAMMDD`). DJEs de datas anteriores, usados para
+Os comandos rodam da **raiz** do projeto. Os PDFs do DJE vão em `DO/` (nome começando por `AAAAMMDD`). DJEs de datas anteriores, usados para
 consultar a portaria original citada por apostilas, vão em `Acervo/`.
 
 Para testar a interface sem navegador há o `streamlit.testing.v1.AppTest` (foi assim que as abas foram
@@ -105,6 +109,10 @@ e o insere entre `⟪ ⟫`; senão, marca `⟦trecho ilegível⟧`.
   os 18 anteriores também no Python 3.10 da VPS.
 - OCR: o onnxruntime não tem versão para o **Python 3.15**. O `Iniciar.bat` cria o `venv` com o 3.14 ou o
   3.13 quando instalados (`py -3.14`); com o 3.15 o app funciona, mas sem OCR.
+- Organização (17/11/2026): código em `sistema/`; arquivos gerados em `Resultados/<AAAA-MM MÊS>/`, com a
+  competência do DO no nome (campo obrigatório: sem ele, os botões das Abas 1, 4 e 5 ficam desabilitados).
+  O seletor das Abas 2 e 3 lista as planilhas de todas as subpastas de `Resultados/`. Os arquivos gerados antes
+  disso foram para `Resultados/ANTERIORES (sem competencia)/`.
 - Aba 2: "Sobrescrever" agora apaga a `DJE_Separados` inteira antes de separar (antes só regravava as páginas da
   planilha e deixava as que saíram do índice — decisão do usuário, 17/11/2026). Com PDF aberto, nada é apagado.
   Problemas na separação aparecem em aviso amarelo, não só no log.
@@ -122,5 +130,5 @@ e o insere entre `⟪ ⟫`; senão, marca `⟦trecho ilegível⟧`.
 - Não há exemplos reais de **requisitado exonerado** nem de **renomeação em outro dia** (testados só
   com PDFs sintéticos durante o desenvolvimento).
 - Aba 4 não inclui apostilas de requisitados (decisão do usuário).
-- Para calibrar novos casos: acrescentar PDFs em `exemplos_apostilas/`, uma linha no `gabarito.txt` e
-  um item em `tests/testar_exemplos.py`.
+- Para calibrar novos casos: acrescentar PDFs em `sistema/exemplos_apostilas/`, uma linha no `gabarito.txt` e
+  um item em `sistema/tests/testar_exemplos.py`.

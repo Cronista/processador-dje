@@ -20,15 +20,15 @@ if not exist "venv\" (
 )
 call venv\Scripts\activate
 
-:: Roda sempre: na primeira vez instala tudo; depois so instala o que mudou no requirements.txt
+:: Roda sempre: na primeira vez instala tudo; depois so instala o que mudou no sistema\requirements.txt
 echo [2/3] Verificando bibliotecas necessarias...
-pip install -r requirements.txt --quiet --disable-pip-version-check
+pip install -r sistema\requirements.txt --quiet --disable-pip-version-check
 :: OCR opcional: le trechos de PDF desenhados em vez de texto. Se falhar, o sistema funciona sem ele.
-pip install -r requirements-ocr.txt --quiet --disable-pip-version-check || echo [aviso] OCR nao instalado. O sistema funciona normalmente sem ele.
+pip install -r sistema\requirements-ocr.txt --quiet --disable-pip-version-check || echo [aviso] OCR nao instalado. O sistema funciona normalmente sem ele.
 
 echo [3/3] Abrindo a interface no navegador...
 echo.
 :: O comando streamlit ja abre uma nova aba no navegador padrao
-streamlit run app.py
+streamlit run sistema\app.py
 
 pause

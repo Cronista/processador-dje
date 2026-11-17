@@ -8,13 +8,16 @@ caso), estado atual e pendências. Manual do usuário: [MANUAL.docx](MANUAL.docx
 
 ## Onde as coisas estão
 
-- `app.py`: interface (5 abas) e geração de Excel/TXT.
-- `analise_dje.py`: regras de análise do texto (atos, apostilas, "tornar sem efeito", saídas da folha, OCR).
-- `tests/testar_exemplos.py`: confere a análise contra `exemplos_apostilas/gabarito.txt`.
-- `exemplos_apostilas/`: PDFs de calibração (`DO/` = apostilas avaliadas, `acervo/` = DJEs/portarias citadas)
+Na raiz ficam só `Iniciar.bat`, `MANUAL.docx`, `RETOMAR.md`, este arquivo e as pastas; o código está em `sistema/`.
+
+- `sistema/app.py`: interface (5 abas) e geração de Excel/TXT. A competência do DO (mês/ano) é obrigatória no menu
+  lateral; os arquivos gerados vão para `Resultados/<AAAA-MM MÊS>/`, com a competência no nome.
+- `sistema/analise_dje.py`: regras de análise do texto (atos, apostilas, "tornar sem efeito", saídas da folha, OCR).
+- `sistema/tests/testar_exemplos.py`: confere a análise contra `sistema/exemplos_apostilas/gabarito.txt`.
+- `sistema/exemplos_apostilas/`: PDFs de calibração (`DO/` = apostilas avaliadas, `acervo/` = DJEs/portarias citadas)
   e o gabarito escrito pelo usuário. **Versionados no Git.**
-- Fora do Git (`.gitignore`), só no computador de trabalho: `DO/`, `Acervo/`, `DJE_Separados/` na raiz e os
-  arquivos gerados (`DO-exp_Processado_Agrupado*.xlsx`, `Portarias_requisitados*.txt`, `Saidas_da_folha*`).
+- Fora do Git (`.gitignore`), só no computador de trabalho, todos na raiz: `DO/`, `Acervo/`, `DJE_Separados/` e
+  `Resultados/` (arquivos gerados: `DO-exp_Processado_Agrupado*.xlsx`, `Portarias_requisitados*.txt`, `Saidas_da_folha*`).
   São dados reais do usuário: ler à vontade, mas não apagar nem sobrescrever.
 
 ## Ambiente e teste
@@ -22,22 +25,23 @@ caso), estado atual e pendências. Manual do usuário: [MANUAL.docx](MANUAL.docx
 O `Iniciar.bat` (Windows) cria o `venv`, instala as dependências e abre o app. Para rodar o teste:
 
 ```bash
-venv\Scripts\python tests\testar_exemplos.py     # Windows
-venv/bin/python tests/testar_exemplos.py         # Linux/Mac
+venv\Scripts\python sistema\tests\testar_exemplos.py     # Windows
+venv/bin/python sistema/tests/testar_exemplos.py         # Linux/Mac
 ```
 
-Precisa terminar com `Tudo certo.`. Com OCR (`requirements-ocr.txt`) todos os casos dão o resultado esperado;
+Precisa terminar com `Tudo certo.`. Com OCR (`sistema/requirements-ocr.txt`) todos os casos dão o resultado esperado;
 sem OCR, os casos que dependem de trechos desenhados no PDF aceitam `VERIFICAR`.
 Para testar a interface sem navegador: `streamlit.testing.v1.AppTest`.
 
 ## Calibrar um caso novo (ex.: página que saiu em "PÁGINAS A VERIFICAR")
 
-1. Copiar a página para `exemplos_apostilas/DO/` com o nome `AAAAMMDDADMDJETJRJ_pgNN.pdf` (a data do DJE
+1. Copiar a página para `sistema/exemplos_apostilas/DO/` com o nome `AAAAMMDDADMDJETJRJ_pgNN.pdf` (a data do DJE
    no início do nome é obrigatória: é por ela que a portaria original é procurada).
-2. Se a apostila cita portaria de outra data, copiar o DJE (ou a página) daquela data para `exemplos_apostilas/acervo/`.
+2. Se a apostila cita portaria de outra data, copiar o DJE (ou a página) daquela data para `sistema/exemplos_apostilas/acervo/`.
 3. Acrescentar a decisão do usuário ao `gabarito.txt`, no formato das linhas existentes.
-4. Acrescentar o item em `APOSTILAS` (ou `PAGINAS_FORA` / `SAIRAM_DA_FOLHA`) em `tests/testar_exemplos.py`.
-5. Ajustar `analise_dje.py` até o teste fechar, sem quebrar os casos anteriores.
+4. Acrescentar o item em `APOSTILAS` (ou `PAGINAS_FORA` / `PAGINAS_DENTRO` / `SAIRAM_DA_FOLHA`) em
+   `sistema/tests/testar_exemplos.py`.
+5. Ajustar `sistema/analise_dje.py` até o teste fechar, sem quebrar os casos anteriores.
 6. Atualizar o `RETOMAR.md` (regra nova na seção 4; seções 5 e 6 com estado e pendências).
 
 ## Convenções

@@ -20,9 +20,11 @@ from analise_dje import (
 # ==========================================
 st.set_page_config(page_title="Processador de DJE", page_icon="📄", layout="wide")
 
-# Pasta onde está o app.py: caminhos relativos e arquivos gerados ficam sempre aqui,
+# Raiz do projeto (o app.py fica em <raiz>/sistema): os caminhos relativos das pastas de dados partem daqui,
 # independentemente de onde o Streamlit foi iniciado.
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Os arquivos gerados ficam em Resultados/<AAAA-MM MÊS>/, uma pasta por competência do DO
+PASTA_RESULTADOS = os.path.join(BASE_DIR, "Resultados")
 
 MESES_EXTENSO = {
     1: "JANEIRO", 2: "FEVEREIRO", 3: "MARÇO", 4: "ABRIL",
@@ -40,15 +42,25 @@ def resolver_caminho(caminho):
         return caminho
     return os.path.normpath(os.path.join(BASE_DIR, caminho))
 
-def nome_com_timestamp(nome_base):
+def pasta_da_competencia(mes, ano):
+    """Pasta dos resultados de uma competência (ex.: Resultados/2026-11 NOVEMBRO), criada se não existir."""
+    pasta = os.path.join(PASTA_RESULTADOS, f"{ano}-{mes:02d} {MESES_EXTENSO[mes]}")
+    os.makedirs(pasta, exist_ok=True)
+    return pasta
+
+def nome_com_timestamp(nome_base, mes, ano):
+    """Ex.: DO-exp_Processado_Agrupado_NOVEMBRO-2026_20261117_161727.xlsx"""
     nome, ext = os.path.splitext(nome_base)
-    return f"{nome}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{ext}"
+    return f"{nome}_{MESES_EXTENSO[mes]}-{ano}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{ext}"
 
 def listar_planilhas(prefixos_ignorados=()):
-    """Planilhas .xlsx da pasta do sistema, da mais recente para a mais antiga."""
-    arquivos = [f for f in os.listdir(BASE_DIR)
-                if f.lower().endswith(".xlsx") and not f.startswith("~$") and not f.startswith(tuple(prefixos_ignorados))]
-    return sorted(arquivos, key=lambda f: os.path.getmtime(os.path.join(BASE_DIR, f)), reverse=True)
+    """Planilhas .xlsx da pasta Resultados (caminho relativo a ela), da mais recente para a mais antiga."""
+    arquivos = []
+    for pasta, _, nomes in os.walk(PASTA_RESULTADOS):
+        for f in nomes:
+            if f.lower().endswith(".xlsx") and not f.startswith("~$") and not f.startswith(tuple(prefixos_ignorados)):
+                arquivos.append(os.path.relpath(os.path.join(pasta, f), PASTA_RESULTADOS).replace(os.sep, "/"))
+    return sorted(arquivos, key=lambda f: os.path.getmtime(os.path.join(PASTA_RESULTADOS, f)), reverse=True)
 
 def converter_data(valor):
     """Converte o valor da coluna DATA (texto dd/mm/aaaa ou data do Excel) em datetime. None se inválido."""
@@ -205,7 +217,8 @@ def gerar_indice_excel(pasta_diarios, pasta_acervo, arquivo_saida):
 def apagar_pasta_separados(diretorio_destino, diretorio_integra):
     """Apaga a pasta dos PDFs separados inteira. Retorna (quantidade de arquivos apagados, erro)."""
     destino = os.path.realpath(diretorio_destino)
-    protegidas = [os.path.realpath(BASE_DIR), os.path.realpath(diretorio_integra), os.path.realpath(os.path.expanduser("~"))]
+    protegidas = [os.path.realpath(p) for p in (BASE_DIR, os.path.dirname(os.path.abspath(__file__)), PASTA_RESULTADOS,
+                                                 diretorio_integra, os.path.expanduser("~"))]
     # Nunca apaga a raiz do disco, a pasta do sistema, a dos PDFs na íntegra ou uma pasta que contenha alguma delas
     if os.path.dirname(destino) == destino or any(p == destino or p.startswith(destino + os.sep) for p in protegidas):
         return 0, (f"Por segurança, a pasta '{diretorio_destino}' não pode ser apagada (é a pasta do sistema, a dos PDFs "
@@ -363,8 +376,10 @@ def extrair_texto_portarias(pasta_diarios, arquivo_saida_txt):
 
     return contador_total, "Sucesso", erros
 
-def gerar_saidas_da_folha(pasta_diarios, nome_base):
-    """Retorna (DataFrame ou None, caminho do Excel, caminho do TXT, mensagem, lista de erros por arquivo)."""
+def gerar_saidas_da_folha(pasta_diarios, caminho_base):
+    """caminho_base: caminho dos arquivos gerados, sem extensão (recebem .xlsx e .txt).
+
+    Retorna (DataFrame ou None, caminho do Excel, caminho do TXT, mensagem, lista de erros por arquivo)."""
     if not os.path.exists(pasta_diarios):
         return None, None, None, f"A pasta '{pasta_diarios}' não existe.", []
     if not listar_pdfs(pasta_diarios):
@@ -391,9 +406,8 @@ def gerar_saidas_da_folha(pasta_diarios, nome_base):
         "ARQUIVO": r["arquivo"]
     } for r in registros])
 
-    nome_saida = nome_com_timestamp(nome_base)
-    caminho_xlsx = os.path.join(BASE_DIR, nome_saida + ".xlsx")
-    caminho_txt = os.path.join(BASE_DIR, nome_saida + ".txt")
+    caminho_xlsx = caminho_base + ".xlsx"
+    caminho_txt = caminho_base + ".txt"
     df.to_excel(caminho_xlsx, sheet_name="Saídas da folha", index=False)
     estilizar_planilha(caminho_xlsx)
 
@@ -421,6 +435,26 @@ if 'planilha_recem_gerada' in st.session_state:
 
 # --- MENU LATERAL (CONFIGURAÇÕES) ---
 with st.sidebar:
+    # Competência do DO: obrigatória para gerar arquivos (Abas 1, 4 e 5). Vai no nome dos arquivos e na pasta
+    # Resultados/<AAAA-MM MÊS>/. Começa vazia de propósito, para que seja escolhida a cada uso.
+    st.header("📅 Competência do DO (obrigatório)")
+    col_mes, col_ano = st.columns([3, 2])
+    mes_competencia = col_mes.selectbox(
+        "Mês", list(MESES_EXTENSO), index=None, format_func=MESES_EXTENSO.get,
+        placeholder="Selecione o mês", key="mes_competencia"
+    )
+    ano_competencia = int(col_ano.number_input("Ano", min_value=2020, max_value=2100, step=1,
+                                               value=datetime.now().year, key="ano_competencia"))
+    competencia_ok = mes_competencia is not None
+    if competencia_ok:
+        competencia = f"{MESES_EXTENSO[mes_competencia]} {ano_competencia}"
+        st.caption(f"Os arquivos gerados vão para `Resultados/{ano_competencia}-{mes_competencia:02d} "
+                   f"{MESES_EXTENSO[mes_competencia]}`.")
+    else:
+        competencia = None
+        st.warning("Selecione o mês do DO para gerar arquivos nas Abas 1, 4 e 5.")
+
+    st.divider()
     st.header("⚙️ Configurações de Diretórios")
     diretorio_integra = resolver_caminho(st.text_input("Pasta dos PDFs na Íntegra", value="./DO"))
     diretorio_separados = resolver_caminho(st.text_input("Pasta dos PDFs Separados", value="./DJE_Separados"))
@@ -449,9 +483,9 @@ with st.sidebar:
             "📌 Planilha usada nas Abas 2 e 3",
             planilhas_disponiveis,
             key='planilha_ativa',
-            help="Lista as planilhas .xlsx da pasta do sistema, da mais recente para a mais antiga."
+            help="Lista as planilhas .xlsx da pasta Resultados (todas as competências), da mais recente para a mais antiga."
         )
-        caminho_planilha_ativa = os.path.join(BASE_DIR, st.session_state.planilha_ativa)
+        caminho_planilha_ativa = os.path.join(PASTA_RESULTADOS, st.session_state.planilha_ativa)
     else:
         st.info("📌 Nenhuma planilha de índice encontrada. Gere uma na Aba 1.")
         caminho_planilha_ativa = None
@@ -482,10 +516,14 @@ with tab1:
     if not os.path.isdir(diretorio_acervo):
         st.caption(f"ℹ️ A pasta do Acervo (`{diretorio_acervo}`) não existe: apostilas que citam DJEs fora do período ficarão como \"a verificar\".")
 
-    if st.button("▶️ Mapear e Gerar Excel", type="primary"):
+    if not competencia_ok:
+        st.info("📅 Selecione a competência do DO no menu lateral para gerar a planilha.")
+    if st.button("▶️ Mapear e Gerar Excel", type="primary", disabled=not competencia_ok):
         with st.spinner("Analisando páginas do DJE..."):
-            arquivo_saida = nome_com_timestamp(planilha_base)
-            df, df_detalhes, msg, erros = gerar_indice_excel(diretorio_integra, diretorio_acervo, os.path.join(BASE_DIR, arquivo_saida))
+            pasta = pasta_da_competencia(mes_competencia, ano_competencia)
+            caminho_saida = os.path.join(pasta, nome_com_timestamp(planilha_base, mes_competencia, ano_competencia))
+            arquivo_saida = os.path.relpath(caminho_saida, PASTA_RESULTADOS).replace(os.sep, "/")
+            df, df_detalhes, msg, erros = gerar_indice_excel(diretorio_integra, diretorio_acervo, caminho_saida)
         # O resultado fica guardado na sessão e a página é recarregada para o seletor do menu lateral
         # já aparecer com a planilha nova selecionada.
         st.session_state.resultado_indice = {"arquivo": arquivo_saida, "df": df, "detalhes": df_detalhes, "msg": msg, "erros": erros}
@@ -496,7 +534,8 @@ with tab1:
     resultado = st.session_state.get('resultado_indice')
     if resultado:
         if resultado["df"] is not None:
-            st.success(f"Arquivo '{resultado['arquivo']}' gerado com sucesso! As próximas abas já estão configuradas para utilizá-lo.")
+            st.success(f"Arquivo 'Resultados/{resultado['arquivo']}' gerado com sucesso! "
+                       "As próximas abas já estão configuradas para utilizá-lo.")
             st.dataframe(resultado["df"], width="stretch")
 
             detalhes = resultado["detalhes"]
@@ -561,10 +600,12 @@ with tab4:
     st.subheader("Consolidação de Portarias de Requisitados")
     st.write("Filtra e extrai o texto literal exclusivamente das portarias associadas a servidores requisitados (matrículas iniciadas com 5).")
 
-    if st.button("▶️ Extrair Portarias (TXT)"):
+    if not competencia_ok:
+        st.info("📅 Selecione a competência do DO no menu lateral para gerar o TXT.")
+    if st.button("▶️ Extrair Portarias (TXT)", disabled=not competencia_ok):
         with st.spinner("Varrendo documentos e isolando atos de requisitados..."):
-            arquivo_txt_saida = nome_com_timestamp(txt_base)
-            caminho_txt_saida = os.path.join(BASE_DIR, arquivo_txt_saida)
+            arquivo_txt_saida = nome_com_timestamp(txt_base, mes_competencia, ano_competencia)
+            caminho_txt_saida = os.path.join(pasta_da_competencia(mes_competencia, ano_competencia), arquivo_txt_saida)
 
             total_portarias, msg, erros = extrair_texto_portarias(diretorio_integra, caminho_txt_saida)
             if total_portarias > 0:
@@ -595,9 +636,13 @@ with tab5:
         "nem quem tiver estabilidade provisória mencionada no ato de exoneração."
     )
 
-    if st.button("▶️ Verificar Saídas da Folha"):
+    if not competencia_ok:
+        st.info("📅 Selecione a competência do DO no menu lateral para verificar as saídas da folha.")
+    if st.button("▶️ Verificar Saídas da Folha", disabled=not competencia_ok):
         with st.spinner("Procurando exonerações e renomeações..."):
-            df, caminho_xlsx, caminho_txt, msg, erros = gerar_saidas_da_folha(diretorio_integra, saidas_base)
+            caminho_base = os.path.join(pasta_da_competencia(mes_competencia, ano_competencia),
+                                        nome_com_timestamp(saidas_base, mes_competencia, ano_competencia))
+            df, caminho_xlsx, caminho_txt, msg, erros = gerar_saidas_da_folha(diretorio_integra, caminho_base)
         # Guardado na sessão para que os dois botões de download continuem disponíveis
         st.session_state.resultado_saidas = {"df": df, "xlsx": caminho_xlsx, "txt": caminho_txt, "msg": msg, "erros": erros}
 
