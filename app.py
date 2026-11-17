@@ -3,6 +3,7 @@ import pandas as pd
 import fitz  # PyMuPDF
 import os
 import re
+import shutil
 import numbers
 from datetime import datetime
 from openpyxl import load_workbook
@@ -201,7 +202,33 @@ def gerar_indice_excel(pasta_diarios, pasta_acervo, arquivo_saida):
     estilizar_planilha(arquivo_saida)
     return df, df_detalhes, "Sucesso", erros
 
+def apagar_pasta_separados(diretorio_destino, diretorio_integra):
+    """Apaga a pasta dos PDFs separados inteira. Retorna (quantidade de arquivos apagados, erro)."""
+    destino = os.path.realpath(diretorio_destino)
+    protegidas = [os.path.realpath(BASE_DIR), os.path.realpath(diretorio_integra), os.path.realpath(os.path.expanduser("~"))]
+    # Nunca apaga a raiz do disco, a pasta do sistema, a dos PDFs na íntegra ou uma pasta que contenha alguma delas
+    if os.path.dirname(destino) == destino or any(p == destino or p.startswith(destino + os.sep) for p in protegidas):
+        return 0, (f"Por segurança, a pasta '{diretorio_destino}' não pode ser apagada (é a pasta do sistema, a dos PDFs "
+                   "na íntegra ou contém uma delas). Corrija a \"Pasta dos PDFs Separados\" no menu lateral.")
+    if not os.path.exists(destino):
+        return 0, None
+    total = sum(len(arquivos) for _, _, arquivos in os.walk(destino))
+    # Renomeia antes de apagar: no Windows, com algum PDF aberto a renomeação falha por inteiro e nada é apagado
+    # (apagar direto deixaria a pasta pela metade)
+    lixo = f"{destino}.apagando_{datetime.now():%Y%m%d_%H%M%S}"
+    try:
+        os.rename(destino, lixo)
+    except OSError as e:
+        return 0, (f"Não foi possível apagar a pasta '{diretorio_destino}' (nada foi apagado): {e}. Feche os PDFs dessa "
+                   "pasta que estiverem abertos (e a própria pasta no Explorador de Arquivos) e tente de novo.")
+    shutil.rmtree(lixo, ignore_errors=True)
+    return total, None
+
 def separar_pdfs(caminho_planilha, diretorio_integra, diretorio_destino, sobrescrever=False):
+    """Separa as páginas da planilha em <destino>/<DD MÊS>/<NN>.pdf.
+
+    Com sobrescrever=True, a pasta de destino é apagada inteira antes, para que fiquem só as páginas da planilha.
+    """
     df, erro = ler_planilha_indice(caminho_planilha)
     if erro:
         return False, [erro]
@@ -211,6 +238,12 @@ def separar_pdfs(caminho_planilha, diretorio_integra, diretorio_destino, sobresc
 
     pdfs_integra = listar_pdfs(diretorio_integra)
     logs = []
+
+    if sobrescrever:
+        apagados, erro = apagar_pasta_separados(diretorio_destino, diretorio_integra)
+        if erro:
+            return False, [erro]
+        logs.append(f"Pasta '{diretorio_destino}' apagada antes da separação ({apagados} arquivo(s) removido(s)).")
 
     for _, row in df.iterrows():
         lista_paginas = extrair_lista_paginas(row['PÁGINAS'])
@@ -485,16 +518,27 @@ with tab2:
     st.subheader("Separação de Páginas Específicas")
     st.write(f"Extrai as páginas identificadas no índice atual (`{nome_planilha_ativa}`) e organiza na pasta de destino.")
     sobrescrever = st.checkbox(
-        "Sobrescrever páginas já separadas",
+        "Sobrescrever páginas já separadas (apaga a pasta inteira antes)",
         value=False,
-        help="Desmarcado, as páginas que já existem na pasta de destino são mantidas como estão."
+        help="Marcado, a pasta dos PDFs separados é apagada inteira (todas as datas) antes da separação, para que "
+             "fiquem só as páginas da planilha. Desmarcado, as páginas que já existem são mantidas e só as que "
+             "faltam são criadas."
     )
+    if sobrescrever:
+        st.warning(f"⚠️ Ao separar, a pasta '{diretorio_separados}' será apagada inteira, com todas as datas.")
 
     if st.button("▶️ Separar PDFs"):
         with st.spinner("Extraindo e organizando páginas em novos arquivos..."):
             sucesso, logs = separar_pdfs(caminho_planilha_ativa, diretorio_integra, diretorio_separados, sobrescrever)
             if sucesso:
-                st.success(f"Processo de separação finalizado! Os arquivos foram salvos em '{diretorio_separados}'.")
+                problemas = [log for log in logs if log.startswith(("Erro", "Aviso"))]
+                if problemas:
+                    st.warning(f"⚠️ Separação finalizada com {len(problemas)} problema(s). "
+                               f"Os arquivos foram salvos em '{diretorio_separados}'.")
+                    for problema in problemas:
+                        st.text(problema)
+                else:
+                    st.success(f"Processo de separação finalizado! Os arquivos foram salvos em '{diretorio_separados}'.")
                 with st.expander("Ver Detalhes do Log de Separação"):
                     for log in logs:
                         st.text(log)

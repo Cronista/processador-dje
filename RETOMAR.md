@@ -13,7 +13,7 @@ Caderno Administrativo. A partir dos PDFs completos do DJE de um período:
 | Aba | O que faz |
 |---|---|
 | 1. Indexação | Planilha com as páginas que têm portaria de cargo/função (CAI-, DAI-, DAS-) ou apostila/"tornar sem efeito" com efeito financeiro. Aba "Detalhes" com o motivo de cada ato. |
-| 2. Separação | Recorta essas páginas em `DJE_Separados/<DD MÊS>/<NN>.pdf`. |
+| 2. Separação | Recorta essas páginas em `DJE_Separados/<DD MÊS>/<NN>.pdf`. Com "Sobrescrever" marcado, apaga a pasta inteira antes (ela é copiada como controle: não pode ter páginas a mais). |
 | 3. Distribuição | Divide as páginas entre a equipe de revisão (diferença máxima de 1 página). |
 | 4. Requisitados | TXT com as portarias de cargo/função de servidores com matrícula iniciada por 5. |
 | 5. Saídas da folha | Planilha + TXT com exonerações de comissionados/requisitados que **não** foram renomeados. |
@@ -105,6 +105,9 @@ e o insere entre `⟪ ⟫`; senão, marca `⟦trecho ilegível⟧`.
   os 18 anteriores também no Python 3.10 da VPS.
 - OCR: o onnxruntime não tem versão para o **Python 3.15**. O `Iniciar.bat` cria o `venv` com o 3.14 ou o
   3.13 quando instalados (`py -3.14`); com o 3.15 o app funciona, mas sem OCR.
+- Aba 2: "Sobrescrever" agora apaga a `DJE_Separados` inteira antes de separar (antes só regravava as páginas da
+  planilha e deixava as que saíram do índice — decisão do usuário, 17/11/2026). Com PDF aberto, nada é apagado.
+  Problemas na separação aparecem em aviso amarelo, não só no log.
 - Portaria sem título reconhecida: nos DJEs de 09/09 a 09/11 a única página nova no índice foi 15/10 p.89.
 - Aba 5: a coluna TRECHO do Excel traz o texto completo do ato (antes era cortado em 300 caracteres).
 - Divisão em atos validada nos DJEs completos de 03/08 e 10/08: nenhuma portaria de cargo perdida;
