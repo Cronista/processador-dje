@@ -13,7 +13,8 @@ cd /d "%~dp0"
 :: Verifica se o ambiente virtual (Python isolado) ja existe
 if not exist "venv\" (
     echo [1/3] Primeira execucao detectada. Configurando ambiente isolado...
-    python -m venv venv
+    :: O OCR (onnxruntime) ainda nao existe para o Python 3.15: usa o 3.14 ou o 3.13 se estiverem instalados
+    py -3.14 -m venv venv 2>nul || py -3.13 -m venv venv 2>nul || python -m venv venv
 ) else (
     echo [1/3] Ambiente isolado encontrado.
 )

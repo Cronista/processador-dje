@@ -101,8 +101,10 @@ e o insere entre `⟪ ⟫`; senão, marca `⟦trecho ilegível⟧`.
 
 ## 5. Estado atual (17/11/2026)
 
-- `tests/testar_exemplos.py`: 19/19 casos do gabarito corretos (o novo, 15/10 p.89, conferido sem OCR;
-  os 18 anteriores também com OCR e no Python 3.10 da VPS).
+- `tests/testar_exemplos.py`: 19/19 casos do gabarito corretos com OCR (Python 3.14, PyMuPDF 2.1);
+  os 18 anteriores também no Python 3.10 da VPS.
+- OCR: o onnxruntime não tem versão para o **Python 3.15**. O `Iniciar.bat` cria o `venv` com o 3.14 ou o
+  3.13 quando instalados (`py -3.14`); com o 3.15 o app funciona, mas sem OCR.
 - Portaria sem título reconhecida: nos DJEs de 09/09 a 09/11 a única página nova no índice foi 15/10 p.89.
 - Aba 5: a coluna TRECHO do Excel traz o texto completo do ato (antes era cortado em 300 caracteres).
 - Divisão em atos validada nos DJEs completos de 03/08 e 10/08: nenhuma portaria de cargo perdida;
