@@ -33,6 +33,9 @@ TITULO_ATO = re.compile(
     r')[ \t]*$',
     re.MULTILINE
 )
+# Portaria publicada sem a linha de título (começa no "id:" e só se identifica no fecho,
+# ex.: "Esta Portaria entra em vigor na data de sua publicação" — 9º NUR, 15/10/2026 p. 89)
+PORTARIA_SEM_TITULO = re.compile(r'\b(?:Esta|A\s+presente)\s+Portaria\b', re.IGNORECASE)
 
 TORNAR_SEM_EFEITO = re.compile(r'\b(?:torn\w*|fica[mr]?)\s+(?:\w+\s+)?sem\s+efeito', re.IGNORECASE)
 REF_PORTARIA = re.compile(r'Portaria\b[^\d]{0,25}?n[º°o.]*\s*(\d[\d.]*\d|\d)(?:\s*/\s*(\d{4}))?', re.IGNORECASE)
@@ -194,7 +197,10 @@ def dividir_em_atos(textos_paginas):
     atos = []
     for (ini, tipo), (fim, _) in zip(cortes, cortes[1:]):
         if fim > ini:
-            atos.append(Ato("outro" if tipo == "id" else tipo, texto[ini:fim], ini))
+            trecho = texto[ini:fim]
+            if tipo == "id":
+                tipo = "portaria" if PORTARIA_SEM_TITULO.search(trecho) else "outro"
+            atos.append(Ato(tipo, trecho, ini))
     return atos, inicios_pagina
 
 def numero_da_pagina(inicios_pagina, posicao):
@@ -458,7 +464,8 @@ SAIU, NAO_SAIU = "SAIU DA FOLHA", "NÃO SAIU"
 
 # Servidores efetivos continuam na folha mesmo perdendo o cargo em comissão ou a função
 CARGOS_ESTAVEIS = re.compile(
-    r't[ée]cnico\s+de\s+atividade\s+judici[áa]ria|analista\s+judici[áa]rio|t[ée]cnico\s+judici[áa]rio|oficial\s+de\s+justi[çc]a',
+    r't[ée]cnico\s+de\s+atividade\s+judici[áa]ria|analista\s+judici[áa]rio|t[ée]cnico\s+judici[áa]rio|oficial\s+de\s+justi[çc]a'
+    r'|\bTAJ\b',  # sigla de Técnico de Atividade Judiciária
     re.IGNORECASE
 )
 NOME = r"[A-ZÀ-ÖØ-Ý][A-ZÀ-ÖØ-Ý'\-]*(?:\s+[A-ZÀ-ÖØ-Ý][A-ZÀ-ÖØ-Ý'\-]*)+"
@@ -472,7 +479,7 @@ NOMEACAO_COLETIVA = re.compile(r'nome[áa]-l[oa]s|\b(?:nomear|designar)\s+(?:\w{
 ESTABILIDADE_PROVISORIA = re.compile(r'estabilidade\s+provis[óo]ria', re.IGNORECASE)
 RENOMEADO_NO_ATO = re.compile(r'\be\s+nome[áa]-l[oa]s?\b|nomeando-[oa]', re.IGNORECASE)
 VINCULO_E_MATRICULA = re.compile(
-    r'\s*,(?P<vinculo>.{0,150}?),?\s*matr[íi]cula\s*(?:funcional\s*)?n?[º°o.]*\s*(?P<matricula>\d[\d./\-]*\d)',
+    r'\s*,(?P<vinculo>.{0,150}?),?\s*(?i:matr[íi]cula|mat\.)\s*(?:funcional\s*)?n?[º°o.]*\s*(?P<matricula>\d[\d./\-]*\d)',
     re.DOTALL
 )
 FIM_DO_ARTIGO = re.compile(r'Art\.\s*2', re.IGNORECASE)

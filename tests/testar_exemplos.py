@@ -41,6 +41,9 @@ APOSTILAS = [
 # Páginas que não podem entrar no índice (ex.: DECISÃO que cita cargo e exoneração)
 PAGINAS_FORA = [(DO, "20260824ADMDJETJRJ_pg17.pdf", 1)]
 
+# Páginas que precisam entrar no índice (ex.: portaria sem a linha de título, identificada por "Esta Portaria")
+PAGINAS_DENTRO = [(DO, "20261015ADMDJETJRJ_pg89.pdf", 1)]
+
 SAIRAM_DA_FOLHA = {"BEATRIZ CAVALCANTI SILVA", "RODRIGO PORTUGAL DE CARVALHO", "MARIANE CRISTINA COSTA GOMES"}
 
 
@@ -64,6 +67,12 @@ def main():
         ok = pagina not in contadas | a_verificar
         falhas += not ok
         print(f"{'OK  ' if ok else 'FALHA'} {arquivo} | página {pagina} fora do índice")
+
+    for pasta, arquivo, pagina in PAGINAS_DENTRO:
+        contadas, _, _ = a.analisar_documento(os.path.join(pasta, arquivo), busca)
+        ok = pagina in contadas
+        falhas += not ok
+        print(f"{'OK  ' if ok else 'FALHA'} {arquivo} | página {pagina} no índice")
 
     registros, _ = a.analisar_saidas_da_folha(ACERVO)
     sairam = {r["servidor"] for r in registros if r["situacao"] == a.SAIU}

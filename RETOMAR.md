@@ -1,7 +1,7 @@
 # Retomar — Processador de DJE
 
 > Ponto de partida para continuar o desenvolvimento a partir do GitHub/nuvem, em qualquer computador.
-> Atualizado em 06/10/2026. Manual do usuário em [MANUAL.docx](MANUAL.docx).
+> Atualizado em 17/11/2026. Manual do usuário em [MANUAL.docx](MANUAL.docx).
 
 ---
 
@@ -62,6 +62,8 @@ O texto de cada PDF é dividido em atos pelo **título na própria linha** (`POR
 `APOSTILAMENTO`, `DECISÃO`, `ATO EXECUTIVO`, `AVISO`...) e pela linha `id: NNNNNNNN` do DJERJ.
 Uma linha `PORTARIA Nº X, publicada...` é **citação**, não título. Só atos do tipo portaria entram na
 busca de cargo/função — decisões não contam, mesmo citando CAI-6 e exoneração.
+Ato **sem linha de título** (começa no `id:`) que se identifica como "Esta Portaria"/"A presente Portaria"
+também é portaria (ex.: dispensa de S.CAI-1 do 9º NUR, 15/10 p.89 — decisão do usuário, 17/11/2026).
 
 ### 4.2 Portaria de cargo/função (Aba 1)
 Conta a página quando a **mesma portaria** tem `CAI-`/`DAI-`/`DAS-` e nomeação/designação/dispensa/exoneração.
@@ -84,7 +86,7 @@ Página já contabilizada por outro ato → `VERIFICAR (dispensável)`.
 Exoneração/dispensa de CAI/DAI/DAS de quem **não tem vínculo efetivo**:
 "Comissionado"/"exclusivamente comissionado", matrícula `4000…` ou requisitado (`5…`, mais de 5 dígitos).
 Estáveis (ficam de fora): Técnico de Atividade Judiciária, Analista Judiciário, Técnico Judiciário,
-Oficial de Justiça. **Renomeação** (nomear/designar a mesma pessoa no mesmo DJE ou em DJE posterior da
+Oficial de Justiça (também a sigla **TAJ**; a matrícula pode vir como "Mat." ou "Matrícula"). **Renomeação** (nomear/designar a mesma pessoa no mesmo DJE ou em DJE posterior da
 pasta DO) → "NÃO SAIU". **Estabilidade provisória** mencionada no ato de exoneração → "NÃO SAIU"
 (comissionado ou efetivo); se o ato exonera mais de um servidor e a menção não está no artigo dele → "VERIFICAR". A busca é **pelo nome** (a matrícula muda); só vale o nome logo após
 "Nomear"/"Designar", para não confundir com "vaga decorrente da exoneração de FULANO".
@@ -97,9 +99,11 @@ e o insere entre `⟪ ⟫`; senão, marca `⟦trecho ilegível⟧`.
 
 ---
 
-## 5. Estado atual (09/11/2026)
+## 5. Estado atual (17/11/2026)
 
-- `tests/testar_exemplos.py`: 18/18 casos do gabarito corretos (com OCR), também no Python 3.10 da VPS.
+- `tests/testar_exemplos.py`: 19/19 casos do gabarito corretos (o novo, 15/10 p.89, conferido sem OCR;
+  os 18 anteriores também com OCR e no Python 3.10 da VPS).
+- Portaria sem título reconhecida: nos DJEs de 09/09 a 09/11 a única página nova no índice foi 15/10 p.89.
 - Aba 5: a coluna TRECHO do Excel traz o texto completo do ato (antes era cortado em 300 caracteres).
 - Divisão em atos validada nos DJEs completos de 03/08 e 10/08: nenhuma portaria de cargo perdida;
   6 falsos positivos antigos (decisões) eliminados.
